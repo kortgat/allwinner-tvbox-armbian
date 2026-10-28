@@ -12,7 +12,8 @@ Based on ophub Armbian 26.11 (Ubuntu resolute, kernel 6.18.51-ophub), with:
 - a device tree with the right Ethernet (EMAC1 RMII, AC300 PHY) and USB ports
 - boot.scr turning on the AC300 PHY's 24 MHz clock (PWM5 bypass), with
   `clk_ignore_unused` to keep it on
-- the onboard Seekwave Wi-Fi driver (DKMS) + firmware, always named `wifi0`
+- both onboard Seekwave Wi-Fi drivers (DKMS) + firmware; the right one is picked
+  from the chip's SDIO ID at boot, and the interface is always named `wifi0`
 - a per-board Wi-Fi MAC and hostname (`armbian-xxxx`) derived from the SoC serial
 - scripts to install from SD to the internal eMMC, and to back up / restore Android
 
@@ -32,9 +33,10 @@ adb shell getprop ro.product.device
 | Android says | Board | SoC | RAM | Image | Bootloader | Wi-Fi |
 |---|---|---|---|---|---|---|
 | Android 12, `athena-p7` | athena-p7 | H618 | 2 GB DDR3 | `athena-h618-armbian-golden-*.img.xz` | `u-boot-athena-p7-ac300.bin` | SWT6621S |
-| Android 10, `eros-p1` | eros-p1 | H313 | 2 GB LPDDR3 | `eros-h313-lpddr3-armbian-golden-*.img.xz` | `u-boot-eros-p1-lpddr3-ac300.bin` | SV6160 |
+| Android 10, `eros-p1` | eros-p1 | H313 | 2 GB LPDDR3 | `eros-h313-lpddr3-armbian-golden-*.img.xz` | `u-boot-eros-p1-lpddr3-ac300.bin` | SV6160 or SWT6621S |
 
-The wrong image just shows a black screen; nothing gets damaged. If unsure,
+eros-p1 boxes come with either Wi-Fi chip; the eros-p1 image detects which one
+is fitted. The wrong image just shows a black screen; nothing gets damaged. If unsure,
 try one, then the other.
 
 The images are on the [Releases](../../releases) page (too big for git).
@@ -175,8 +177,9 @@ After changing the SD system (updates, extra packages):
 | `bootloader/debug/` | RAM-debug bootloaders (LED blink codes) for bringing up unknown boxes |
 | `bootloader/BUILDING.md` | how the bootloaders were built |
 | `dtb/` | device trees (`sun50i-h618-vontar-h618-usb.dtb` for athena-p7, `sun50i-h313-eros-p1.dtb` for eros-p1) |
-| `patches/swt6621s-ophub-6.18-cfg80211.patch` | athena-p7 Wi-Fi driver ([Novice-PG/swt6621s](https://github.com/Novice-PG/swt6621s) 1.0.2) ported to this kernel |
-| `patches/sv6160-ea6x21-ophub-6.18.patch` | eros-p1 Wi-Fi driver ([joilg/ea6x21-dkms](https://github.com/joilg/ea6x21-dkms) b193d8b) ported to this kernel |
+| `patches/swt6621s-ophub-6.18-cfg80211.patch` | SWT6621S Wi-Fi driver ([Novice-PG/swt6621s](https://github.com/Novice-PG/swt6621s) 1.0.3) ported to this kernel; its Bluetooth module installs as `skwbt_lite` so it can sit beside the SV6160 one |
+| `patches/sv6160-ea6x21-ophub-6.18.patch` | SV6160 Wi-Fi driver ([joilg/ea6x21-dkms](https://github.com/joilg/ea6x21-dkms) b193d8b) ported to this kernel |
+| `rootfs/` | files the images add under `/etc`: the udev rule and modprobe config that pick the Wi-Fi driver by SDIO ID (`1FFE:6621` = SWT6621S, `0000:0000` = SV6160), and the ordering that writes the Wi-Fi MAC before udev runs |
 | `patches/u-boot-h616-dram-sweep-led-debug.patch` | the U-Boot debug SPL used to find working RAM settings |
 
 A bootloader can be written to a card or eMMC by hand at 8 KiB:
@@ -197,7 +200,7 @@ A bootloader can be written to a card or eMMC by hand at 8 KiB:
   ```
 - **A new kernel needs the Wi-Fi driver rebuilt.** DKMS does it automatically
   if the matching kernel headers are installed.
-- **eros-p1 Wi-Fi:** never `rmmod skw_sdio`. The driver crashes on unload and
+- **SV6160 Wi-Fi:** never `rmmod skw_sdio`. The driver crashes on unload and
   the next shutdown hangs for minutes. Reboot instead.
 - eros-p1 RAM runs at 600 MHz; 720 MHz is unstable.
 - The SD card always boots first. To boot the eMMC, take the card out.

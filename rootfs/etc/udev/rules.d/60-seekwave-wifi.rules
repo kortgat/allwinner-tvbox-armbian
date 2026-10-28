@@ -1,0 +1,9 @@
+# Onboard Seekwave Wi-Fi: the same box model ships with either chip, so load
+# the driver stack that matches the SDIO ID the chip reports at power-on.
+# Both stacks are blacklisted in seekwave-wifi.conf so modalias autoloading
+# can't pick the wrong one (the lite driver also claims 3607:6160, the ID the
+# SV6160 can show once its firmware runs); modprobe by name ignores that.
+#   1FFE:6621  SWT6621S (athena-p7, some eros-p1) -> Novice-PG/swt6621s
+#   0000:0000  SV6160 before firmware download (eros-p1) -> joilg/ea6x21-dkms
+ACTION=="add", SUBSYSTEM=="sdio", ENV{SDIO_ID}=="1FFE:6621", RUN+="/usr/sbin/modprobe swt6621s_wifi"
+ACTION=="add", SUBSYSTEM=="sdio", ENV{SDIO_ID}=="0000:0000", RUN+="/usr/sbin/modprobe skw"

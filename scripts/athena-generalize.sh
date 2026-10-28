@@ -25,7 +25,8 @@ touch /root/.not_logged_in_yet
 rm -rf /root/.ssh /root/.bash_history /root/.cache /root/.local/share/nano \
 	/root/.lesshst /root/.wget-hsts
 rm -rf /root/swt-build /root/mdio.py /root/ac300clk.py /root/netplan-backup \
-	/root/sv-build /root/armbianEnv.txt.before-cpufreq /root/swt6621s-modules-load.conf.disabled
+	/root/sv-build /root/armbianEnv.txt.before-cpufreq /root/swt6621s-modules-load.conf.disabled \
+	/root/sv6160-config-backup
 chown -R root:root /root/athena
 
 echo "== network credentials"

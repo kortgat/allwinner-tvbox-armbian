@@ -46,7 +46,7 @@ dd if="$DEV" of="$OUT" bs=1M count=$(( (end_bytes + 1048575) / 1048576 )) \
 
 echo "== compressing"
 xz -T0 -6 -f "$OUT"
-sha256sum "$OUT.xz" > "$OUT.xz.sha256"
+(cd "$OUT_DIR" && sha256sum "$(basename "$OUT").xz") > "$OUT.xz.sha256"
 chown --reference="$OUT_DIR" "$OUT.xz" "$OUT.xz.sha256"
 ls -l "$OUT.xz"
 echo "== done. Flash with: xz -dc $(basename "$OUT").xz | sudo dd of=/dev/sdX bs=4M conv=fsync"
