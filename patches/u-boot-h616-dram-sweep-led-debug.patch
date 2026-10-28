@@ -1,0 +1,337 @@
+diff --git a/arch/arm/include/asm/arch-sunxi/dram_sun50i_h616.h b/arch/arm/include/asm/arch-sunxi/dram_sun50i_h616.h
+index a8fdda124..f20cb26bb 100644
+--- a/arch/arm/include/asm/arch-sunxi/dram_sun50i_h616.h
++++ b/arch/arm/include/asm/arch-sunxi/dram_sun50i_h616.h
+@@ -168,9 +168,11 @@ struct dram_config {
+ 	u8 bus_full_width;
+ };
+ 
++extern unsigned int mctl_dram_clk;
++
+ static inline int ns_to_t(int nanoseconds)
+ {
+-	const unsigned int ctrl_freq = CONFIG_DRAM_CLK / 2;
++	const unsigned int ctrl_freq = mctl_dram_clk / 2;
+ 
+ 	return DIV_ROUND_UP(ctrl_freq * nanoseconds, 1000);
+ }
+diff --git a/arch/arm/mach-sunxi/dram_dw_helpers.c b/arch/arm/mach-sunxi/dram_dw_helpers.c
+index d2af2d57f..4d7fb951d 100644
+--- a/arch/arm/mach-sunxi/dram_dw_helpers.c
++++ b/arch/arm/mach-sunxi/dram_dw_helpers.c
+@@ -9,6 +9,8 @@
+ #include <init.h>
+ #include <asm/arch/dram_dw_helpers.h>
+ 
++extern bool mctl_dram_probing, mctl_dram_failed;
++
+ void mctl_auto_detect_rank_width(const struct dram_para *para,
+ 				 struct dram_config *config)
+ {
+@@ -27,27 +29,35 @@ void mctl_auto_detect_rank_width(const struct dram_para *para,
+ 	debug("testing 32-bit width, rank = 2\n");
+ 	config->bus_full_width = 1;
+ 	config->ranks = 2;
+-	if (mctl_core_init(para, config))
++	mctl_dram_failed = false;
++	if (mctl_core_init(para, config) && !mctl_dram_failed)
+ 		return;
+ 
+ 	debug("testing 32-bit width, rank = 1\n");
+ 	config->bus_full_width = 1;
+ 	config->ranks = 1;
+-	if (mctl_core_init(para, config))
++	mctl_dram_failed = false;
++	if (mctl_core_init(para, config) && !mctl_dram_failed)
+ 		return;
+ 
+ 	debug("testing 16-bit width, rank = 2\n");
+ 	config->bus_full_width = 0;
+ 	config->ranks = 2;
+-	if (mctl_core_init(para, config))
++	mctl_dram_failed = false;
++	if (mctl_core_init(para, config) && !mctl_dram_failed)
+ 		return;
+ 
+ 	debug("testing 16-bit width, rank = 1\n");
+ 	config->bus_full_width = 0;
+ 	config->ranks = 1;
+-	if (mctl_core_init(para, config))
++	mctl_dram_failed = false;
++	if (mctl_core_init(para, config) && !mctl_dram_failed)
+ 		return;
+ 
++	if (mctl_dram_probing) {
++		mctl_dram_failed = true;
++		return;
++	}
+ 	panic("This DRAM setup is currently not supported.\n");
+ }
+ 
+diff --git a/arch/arm/mach-sunxi/dram_helpers.c b/arch/arm/mach-sunxi/dram_helpers.c
+index 376b7d14f..f47b8cf96 100644
+--- a/arch/arm/mach-sunxi/dram_helpers.c
++++ b/arch/arm/mach-sunxi/dram_helpers.c
+@@ -12,6 +12,10 @@
+ #include <asm/io.h>
+ #include <asm/arch/dram.h>
+ 
++/* Set while probing DRAM variants: failures are reported, not fatal */
++bool mctl_dram_probing __section(".data");
++bool mctl_dram_failed __section(".data");
++
+ /*
+  * Wait up to 1s for value to be set in given part of reg.
+  */
+@@ -19,9 +23,18 @@ void mctl_await_completion(u32 *reg, u32 mask, u32 val)
+ {
+ 	unsigned long tmo = timer_get_us() + 1000000;
+ 
++	/* this variant already failed: don't spend a second on every wait */
++	if (mctl_dram_probing && mctl_dram_failed)
++		return;
++
+ 	while ((readl(reg) & mask) != val) {
+-		if (timer_get_us() > tmo)
++		if (timer_get_us() > tmo) {
++			if (mctl_dram_probing) {
++				mctl_dram_failed = true;
++				return;
++			}
+ 			panic("Timeout initialising DRAM\n");
++		}
+ 	}
+ }
+ 
+diff --git a/arch/arm/mach-sunxi/dram_sun50i_h616.c b/arch/arm/mach-sunxi/dram_sun50i_h616.c
+index 42a0550e0..077d89d69 100644
+--- a/arch/arm/mach-sunxi/dram_sun50i_h616.c
++++ b/arch/arm/mach-sunxi/dram_sun50i_h616.c
+@@ -22,6 +22,9 @@
+ #include <asm/arch/prcm.h>
+ #include <linux/bitops.h>
+ #include <linux/delay.h>
++#include <time.h>
++
++extern bool mctl_dram_probing, mctl_dram_failed;
+ 
+ enum {
+ 	MBUS_QOS_LOWEST = 0,
+@@ -189,6 +192,10 @@ static void mctl_set_addrmap(const struct dram_config *config)
+ 		mctl_ctl->addrmap[4] = 0;
+ 		break;
+ 	default:
++		if (mctl_dram_probing) {
++			mctl_dram_failed = true;
++			return;
++		}
+ 		panic("Unsupported DRAM configuration: column number invalid\n");
+ 	}
+ 
+@@ -220,6 +227,10 @@ static void mctl_set_addrmap(const struct dram_config *config)
+ 		mctl_ctl->addrmap[7] = (cols - 3) | ((cols - 3) << 8);
+ 		break;
+ 	default:
++		if (mctl_dram_probing) {
++			mctl_dram_failed = true;
++			return;
++		}
+ 		panic("Unsupported DRAM configuration: row number invalid\n");
+ 	}
+ 
+@@ -380,6 +391,7 @@ static bool mctl_phy_write_leveling(const struct dram_para *para,
+ 
+ static bool mctl_phy_read_calibration(const struct dram_config *config)
+ {
++	unsigned long tmo;
+ 	bool result = true;
+ 	u32 val, tmp;
+ 
+@@ -392,8 +404,10 @@ static bool mctl_phy_read_calibration(const struct dram_config *config)
+ 	else
+ 		val = 3;
+ 
++	tmo = timer_get_us() + 1000000;
+ 	while ((readl(SUNXI_DRAM_PHY0_BASE + 0x184) & val) != val) {
+-		if (readl(SUNXI_DRAM_PHY0_BASE + 0x184) & 0x20) {
++		if ((readl(SUNXI_DRAM_PHY0_BASE + 0x184) & 0x20) ||
++		    timer_get_us() > tmo) {
+ 			result = false;
+ 			break;
+ 		}
+@@ -408,8 +422,10 @@ static bool mctl_phy_read_calibration(const struct dram_config *config)
+ 
+ 		setbits_le32(SUNXI_DRAM_PHY0_BASE + 8, 1);
+ 
++		tmo = timer_get_us() + 1000000;
+ 		while ((readl(SUNXI_DRAM_PHY0_BASE + 0x184) & val) != val) {
+-			if (readl(SUNXI_DRAM_PHY0_BASE + 0x184) & 0x20) {
++			if ((readl(SUNXI_DRAM_PHY0_BASE + 0x184) & 0x20) ||
++			    timer_get_us() > tmo) {
+ 				result = false;
+ 				break;
+ 			}
+@@ -1319,43 +1335,140 @@ bool mctl_core_init(const struct dram_para *para,
+ 	return mctl_ctrl_init(para, config);
+ }
+ 
+-static const struct dram_para para = {
+-	.clk = CONFIG_DRAM_CLK,
++unsigned int mctl_dram_clk __section(".data") = CONFIG_DRAM_CLK;
++
++/*
++ * athena: try several DRAM parameter sets and keep the first that passes a
++ * memory test. Progress is shown on the front LED (PH5, active high) since
++ * these boxes have no console. The chosen index is left in an RTC general
++ * purpose register for U-Boot proper to report.
++ */
++#define ATHENA_RTC_GP_VARIANT	(SUNXI_RTC_BASE + 0x108)
++#define ATHENA_PIO		0x0300b000
++#define ATHENA_PH_CFG0		(ATHENA_PIO + 7 * 0x24)
++#define ATHENA_PH_DATA		(ATHENA_PIO + 7 * 0x24 + 0x10)
++#define ATHENA_LED		BIT(5)
++
++static void athena_led(bool on)
++{
++	if (on)
++		setbits_le32(ATHENA_PH_DATA, ATHENA_LED);
++	else
++		clrbits_le32(ATHENA_PH_DATA, ATHENA_LED);
++}
++
++static void athena_blink(int n, int ms)
++{
++	while (n--) {
++		athena_led(true);
++		mdelay(ms);
++		athena_led(false);
++		mdelay(ms);
++	}
++}
++
++#define LPDDR3_VENDOR(c, t10)	{ .clk = (c), .type = SUNXI_DRAM_TYPE_LPDDR3, \
++	.dx_odt = 0x06060606, .dx_dri = 0x0d0d0d0d, .ca_dri = 0x0d0d,	\
++	.odt_en = 0x9988eeee, .tpr6 = 0x2fa88080, .tpr10 = (t10),	\
++	.tpr11 = 0xaa889967, .tpr12 = 0xeeee8979 }
++#define LPDDR3_TANIX(c, t10)	{ .clk = (c), .type = SUNXI_DRAM_TYPE_LPDDR3, \
++	.dx_odt = 0x06060606, .dx_dri = 0x0d0d0d0d, .ca_dri = 0x1919,	\
++	.odt_en = 0x9988eeee, .tpr6 = 0x2fb08080, .tpr10 = (t10),	\
++	.tpr11 = 0x0e0f0d0d, .tpr12 = 0x11131213 }
++
++static const struct dram_para athena_variants[] = {
+ #ifdef CONFIG_SUNXI_DRAM_H616_DDR3_1333
+-	.type = SUNXI_DRAM_TYPE_DDR3,
+-#elif defined(CONFIG_SUNXI_DRAM_H616_LPDDR3)
+-	.type = SUNXI_DRAM_TYPE_LPDDR3,
+-#elif defined(CONFIG_SUNXI_DRAM_H616_LPDDR4)
+-	.type = SUNXI_DRAM_TYPE_LPDDR4,
++	{ .clk = 600, .type = SUNXI_DRAM_TYPE_DDR3,	/* athena-p7 (box 1) */
++	  .dx_odt = 0x03030303, .dx_dri = 0x0e0e0e0e, .ca_dri = 0x1c1c,
++	  .odt_en = 0x1, .tpr0 = 0xc0001008, .tpr2 = 0x100,
++	  .tpr6 = 0x33808080, .tpr10 = 0x2f00f6, .tpr11 = 0xddddcccc,
++	  .tpr12 = 0xeddc7564 },
++#else
++	LPDDR3_TANIX(600, 0x402f4469),	/* 1 blink: tanix_tx1 at Android's 600 MHz */
++	LPDDR3_TANIX(720, 0x402f4469),	/* 2: tanix_tx1 as upstream (720 MHz) */
++	LPDDR3_TANIX(480, 0x402f4469),	/* 3 */
++	LPDDR3_VENDOR(600, 0x2f3359),	/* 4: Android boot0 values */
+ #endif
+-	.dx_odt = CONFIG_DRAM_SUNXI_DX_ODT,
+-	.dx_dri = CONFIG_DRAM_SUNXI_DX_DRI,
+-	.ca_dri = CONFIG_DRAM_SUNXI_CA_DRI,
+-	.odt_en = CONFIG_DRAM_SUNXI_ODT_EN,
+-	.tpr0 = CONFIG_DRAM_SUNXI_TPR0,
+-	.tpr2 = CONFIG_DRAM_SUNXI_TPR2,
+-	.tpr6 = CONFIG_DRAM_SUNXI_TPR6,
+-	.tpr10 = CONFIG_DRAM_SUNXI_TPR10,
+-	.tpr11 = CONFIG_DRAM_SUNXI_TPR11,
+-	.tpr12 = CONFIG_DRAM_SUNXI_TPR12,
+ };
+ 
++/* Pattern windows spread over the whole size also catch address aliasing */
++static bool athena_memtest(unsigned long size)
++{
++	unsigned long step = size / 64, off;
++	int pass, i;
++
++	for (pass = 0; pass < 2; pass++) {
++		u32 x = pass ? 0xa5a5a5a5 : 0x5a5a5a5a;
++
++		for (off = 0; off < size; off += step) {
++			u32 *p = (u32 *)(CFG_SYS_SDRAM_BASE + off);
++
++			for (i = 0; i < 256; i++)
++				p[i] = (u32)(off + i * 4) ^ x;
++		}
++		for (off = 0; off < size; off += step) {
++			u32 *p = (u32 *)(CFG_SYS_SDRAM_BASE + off);
++
++			for (i = 0; i < 256; i++)
++				if (p[i] != ((u32)(off + i * 4) ^ x))
++					return false;
++		}
++	}
++	return true;
++}
++
+ unsigned long sunxi_dram_init(void)
+ {
+ 	void *const prcm = (void *)SUNXI_PRCM_BASE;
+ 	struct dram_config config;
+-	unsigned long size;
++	unsigned long size = 0;
++	int v;
++
++	/* LED: PH5 as output; 3 quick blinks = SPL is running */
++	clrsetbits_le32(ATHENA_PH_CFG0, 0xf << 20, 1 << 20);
++	athena_blink(3, 150);
++	mdelay(1000);
+ 
+ 	setbits_le32(prcm + CCU_PRCM_RES_CAL_CTRL, BIT(8));
+ 	clrbits_le32(prcm + CCU_PRCM_OHMS240, 0x3f);
+ 
+-	mctl_auto_detect_rank_width(&para, &config);
+-	mctl_auto_detect_dram_size(&para, &config);
+-
+-	mctl_core_init(&para, &config);
++	mctl_dram_probing = true;
++	for (v = 0; v < ARRAY_SIZE(athena_variants); v++) {
++		const struct dram_para *para = &athena_variants[v];
++		bool ok;
++
++		mctl_dram_clk = para->clk;
++		mctl_dram_failed = false;
++		/* v+1 short blinks, then on while this variant is tried */
++		athena_blink(v + 1, 250);
++		mdelay(500);
++		athena_led(true);
++
++		mctl_auto_detect_rank_width(para, &config);
++		if (!mctl_dram_failed)
++			mctl_auto_detect_dram_size(para, &config);
++		ok = !mctl_dram_failed && mctl_core_init(para, &config) &&
++		     !mctl_dram_failed;
++		size = ok ? mctl_calc_size(&config) : 0;
++
++		if (ok && size && athena_memtest(size)) {
++			athena_blink(10, 80);	/* 10 fast blinks = works */
++			athena_led(true);
++			mdelay(2000);
++			break;
++		}
++		athena_led(false);
++		mdelay(1000);
++		size = 0;
++	}
++	mctl_dram_probing = false;
+ 
+-	size = mctl_calc_size(&config);
++	if (!size) {
++		for (;;)	/* fast flashing = no variant worked */
++			athena_blink(1, 80);
++	}
+ 
++	writel(v, ATHENA_RTC_GP_VARIANT);
+ 	mctl_set_master_priority();
+ 
+ 	return size;

@@ -1,0 +1,11 @@
+# Disk images: too big for git, publish them as GitHub release assets
+*.img
+*.img.gz
+*.img.xz
+*.img.xz.sha256
+
+# Per-box Android backups: private, and only useful for the box they came from
+android-backup*/
+
+# Vendor Android Wi-Fi blobs and kernel modules (proprietary, reference only)
+box2-android-seekwave/
