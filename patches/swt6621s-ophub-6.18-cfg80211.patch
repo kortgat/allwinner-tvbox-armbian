@@ -10,6 +10,22 @@ index f45707c..1493c46 100644
  BUILT_MODULE_LOCATION[2]="src/swtbt4l"
  DEST_MODULE_LOCATION[2]="/updates"
  
+diff --git a/src/seekwaveplatform_lite/Makefile b/src/seekwaveplatform_lite/Makefile
+index 2f0c539..682dc35 100755
+--- a/src/seekwaveplatform_lite/Makefile
++++ b/src/seekwaveplatform_lite/Makefile
+@@ -9,6 +9,11 @@ ccflags-y += -I$(src)/sdio
+ ccflags-y += -I$(src)/../include
+ ccflags-y += -I$(src)/../include/linux/platform_data
+ 
++# skw_bootcoms (SV6160 driver) exports the same two names; keep ours private
++# so depmod never ties skw.ko to this module
++ccflags-y += -Dskw_start_wifi_service=skwlite_start_wifi_service
++ccflags-y += -Dskw_stop_wifi_service=skwlite_stop_wifi_service
++
+ obj-m += skw_sdio_lite.o
+ skw_sdio_lite-y := ./sdio/skw_sdio_main.o
+ skw_sdio_lite-y += ./sdio/skw_sdio_rx.o
 diff --git a/src/swt6621s_wifi/Makefile b/src/swt6621s_wifi/Makefile
 index c745fb1..9e72d0f 100755
 --- a/src/swt6621s_wifi/Makefile

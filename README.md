@@ -203,4 +203,10 @@ A bootloader can be written to a card or eMMC by hand at 8 KiB:
 - **SV6160 Wi-Fi:** never `rmmod skw_sdio`. The driver crashes on unload and
   the next shutdown hangs for minutes. Reboot instead.
 - eros-p1 RAM runs at 600 MHz; 720 MHz is unstable.
+- eros-p1 eMMC runs in DDR52 (about 87 MB/s). HS200 is switched off in the
+  device tree because some boards' eMMC (e.g. DF4016) times out switching to
+  it, and the boot then hangs reading the eMMC partition table.
+- Both Seekwave SDIO modules export `skw_start/stop_wifi_service`; the lite
+  one is built with them renamed (`skwlite_*`) so depmod always ties the
+  SV6160 `skw.ko` to `skw_bootcoms`.
 - The SD card always boots first. To boot the eMMC, take the card out.
